@@ -8,6 +8,7 @@ public sealed class NexoraDbContext(DbContextOptions<NexoraDbContext> options) :
     public DbSet<Computer> Computers => Set<Computer>();
     public DbSet<Tariff> Tariffs => Set<Tariff>();
     public DbSet<Session> Sessions => Set<Session>();
+    public DbSet<Charge> Charges => Set<Charge>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -38,6 +39,16 @@ public sealed class NexoraDbContext(DbContextOptions<NexoraDbContext> options) :
                 .IsUnique()
                 .HasFilter("EndedAt IS NULL");
             entity.HasOne<Computer>().WithMany().HasForeignKey(x => x.ComputerId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<Charge>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Amount).HasPrecision(18, 2).IsRequired();
+            entity.Property(x => x.ChargedAtUtc).IsRequired();
+            entity.HasIndex(x => x.SessionId).IsUnique();
+            entity.HasIndex(x => x.ChargedAtUtc);
+            entity.HasOne<Session>().WithMany().HasForeignKey(x => x.SessionId).OnDelete(DeleteBehavior.Restrict);
         });
     }
 }

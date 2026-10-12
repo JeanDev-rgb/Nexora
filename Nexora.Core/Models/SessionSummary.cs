@@ -9,4 +9,6 @@ public sealed record SessionSummary(
     DateTime? EndedAtUtc,
     decimal HourlyRate,
     decimal Amount,
-    TimeSpan Duration);
+    TimeSpan Duration,
+    bool IsEstimated,
+    DateTime? ChargedAtUtc);

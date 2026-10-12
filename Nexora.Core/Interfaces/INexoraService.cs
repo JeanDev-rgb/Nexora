@@ -17,7 +17,8 @@ public interface INexoraService
     Task UpdateTariffAsync(Guid id, string name, decimal pricePerHour, bool isActive, CancellationToken cancellationToken = default);
     Task<SessionSummary> StartSessionAsync(Guid computerId, Guid tariffId, CancellationToken cancellationToken = default);
     Task<SessionSummary> FinishSessionAsync(Guid sessionId, CancellationToken cancellationToken = default);
+    Task<decimal> GetRevenueAsync(DateTime localFrom, DateTime localTo, TimeZoneInfo timeZone, CancellationToken cancellationToken = default);
     Task<DashboardSummary> GetDashboardAsync(DateTime localDate, TimeZoneInfo timeZone, CancellationToken cancellationToken = default);
 }
 
-public sealed record DashboardSummary(int TotalComputers, int ActiveSessions, decimal TodayRevenue);
+public sealed record DashboardSummary(int TotalComputers, int ActiveSessions, decimal TodayRevenue, decimal ActiveEstimatedAmount);

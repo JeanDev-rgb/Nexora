@@ -65,8 +65,10 @@ public sealed class NexoraService(IDbContextFactory<NexoraDbContext> contextFact
         var rows = await db.Sessions.AsNoTracking().Where(x => x.EndedAt != null)
             .Join(db.Computers, session => session.ComputerId, computer => computer.Id,
                 (session, computer) => new { session, computer.Name })
+            .GroupJoin(db.Charges, row => row.session.Id, charge => charge.SessionId,
+                (row, charges) => new { row.session, row.Name, Charge = charges.SingleOrDefault() })
             .OrderByDescending(x => x.session.EndedAt).Take(count).ToListAsync(cancellationToken);
-        return rows.Select(x => ToSummary(x.session, x.Name)).ToList();
+        return rows.Select(x => ToSummary(x.session, x.Name, x.Charge)).ToList();
     }
 
     public async Task<SessionSummary?> GetActiveSessionAsync(Guid computerId, CancellationToken cancellationToken = default)
@@ -75,7 +77,7 @@ public sealed class NexoraService(IDbContextFactory<NexoraDbContext> contextFact
         var row = await db.Sessions.AsNoTracking().Where(x => x.ComputerId == computerId && x.EndedAt == null)
             .Join(db.Computers, session => session.ComputerId, computer => computer.Id,
                 (session, computer) => new { session, computer.Name }).SingleOrDefaultAsync(cancellationToken);
-        return row is null ? null : ToSummary(row.session, row.Name);
+        return row is null ? null : ToSummary(row.session, row.Name, null);
     }
 
     public async Task<Computer> AddComputerAsync(string name, CancellationToken cancellationToken = default)
@@ -147,7 +149,7 @@ public sealed class NexoraService(IDbContextFactory<NexoraDbContext> contextFact
         db.Sessions.Add(session);
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
-        return ToSummary(session, computer.Name);
+        return ToSummary(session, computer.Name, null);
     }
 
     public async Task<SessionSummary> FinishSessionAsync(Guid sessionId, CancellationToken cancellationToken = default)
@@ -156,31 +158,48 @@ public sealed class NexoraService(IDbContextFactory<NexoraDbContext> contextFact
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         var session = await db.Sessions.SingleOrDefaultAsync(x => x.Id == sessionId, cancellationToken) ?? throw new KeyNotFoundException("No se encontró la sesión.");
         var computer = await db.Computers.SingleAsync(x => x.Id == session.ComputerId, cancellationToken);
-        session.Finish(DateTime.UtcNow);
+        var chargedAtUtc = DateTime.UtcNow;
+        session.Finish(chargedAtUtc);
         computer.FinishSession();
+        db.Charges.Add(new Charge(session.Id, session.FinalAmount ?? throw new InvalidOperationException("La sesión no tiene importe final."), chargedAtUtc));
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
-        return ToSummary(session, computer.Name);
+        return ToSummary(session, computer.Name, await db.Charges.AsNoTracking().SingleAsync(x => x.SessionId == session.Id, cancellationToken));
     }
 
     public async Task<DashboardSummary> GetDashboardAsync(DateTime localDate, TimeZoneInfo timeZone, CancellationToken cancellationToken = default)
     {
         var startLocal = localDate.Date;
-        var startUtc = TimeZoneInfo.ConvertTimeToUtc(startLocal, timeZone);
-        var endUtc = TimeZoneInfo.ConvertTimeToUtc(startLocal.AddDays(1), timeZone);
         await using var db = await CreateContextAsync(cancellationToken);
         var total = await db.Computers.CountAsync(cancellationToken);
-        var active = await db.Sessions.CountAsync(x => x.EndedAt == null, cancellationToken);
-        var revenue = await db.Sessions.Where(x => x.EndedAt >= startUtc && x.EndedAt < endUtc)
-            .SumAsync(x => x.FinalAmount ?? 0m, cancellationToken);
-        return new DashboardSummary(total, active, revenue);
+        var activeRows = await db.Sessions.AsNoTracking()
+            .Where(x => x.EndedAt == null)
+            .Select(x => new { x.StartedAt, x.HourlyRate })
+            .ToListAsync(cancellationToken);
+        var active = activeRows.Count;
+        var activeEstimated = activeRows.Sum(x => Session.CalculateAmount(DateTime.UtcNow - x.StartedAt, x.HourlyRate));
+        var revenue = await GetRevenueAsync(startLocal, startLocal.AddDays(1), timeZone, cancellationToken);
+        return new DashboardSummary(total, active, revenue, activeEstimated);
     }
 
-    private static SessionSummary ToSummary(Session session, string computerName)
+    public async Task<decimal> GetRevenueAsync(DateTime localFrom, DateTime localTo, TimeZoneInfo timeZone, CancellationToken cancellationToken = default)
+    {
+        if (localTo <= localFrom)
+            throw new ArgumentException("El final del período debe ser posterior al inicio.", nameof(localTo));
+
+        var fromUtc = TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(localFrom, DateTimeKind.Unspecified), timeZone);
+        var toUtc = TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(localTo, DateTimeKind.Unspecified), timeZone);
+        await using var db = await CreateContextAsync(cancellationToken);
+        return await db.Charges.Where(x => x.ChargedAtUtc >= fromUtc && x.ChargedAtUtc < toUtc)
+            .SumAsync(x => x.Amount, cancellationToken);
+    }
+
+    private static SessionSummary ToSummary(Session session, string computerName, Charge? charge)
     {
         var end = session.EndedAt;
         var duration = end.HasValue ? end.Value - session.StartedAt : DateTime.UtcNow - session.StartedAt;
-        var amount = session.FinalAmount ?? session.CalculateAmount(DateTime.UtcNow);
-        return new SessionSummary(session.Id, session.ComputerId, computerName, session.TariffName, session.StartedAt, end, session.HourlyRate, amount, duration);
+        var isEstimated = session.IsActive;
+        var amount = isEstimated ? session.CalculateAmount(DateTime.UtcNow) : charge?.Amount ?? session.FinalAmount ?? 0m;
+        return new SessionSummary(session.Id, session.ComputerId, computerName, session.TariffName, session.StartedAt, end, session.HourlyRate, amount, duration, isEstimated, charge?.ChargedAtUtc);
     }
 }

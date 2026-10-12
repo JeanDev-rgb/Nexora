@@ -17,6 +17,32 @@ namespace Nexora.Infrastructure.Persistence.Migrations
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.12");
 
+            modelBuilder.Entity("Nexora.Core.Models.Charge", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("ChargedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("SessionId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ChargedAtUtc");
+
+                    b.HasIndex("SessionId")
+                        .IsUnique();
+
+                    b.ToTable("Charges");
+                });
+
             modelBuilder.Entity("Nexora.Core.Models.Computer", b =>
                 {
                     b.Property<Guid>("Id")
@@ -104,6 +130,15 @@ namespace Nexora.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("Tariffs");
+                });
+
+            modelBuilder.Entity("Nexora.Core.Models.Charge", b =>
+                {
+                    b.HasOne("Nexora.Core.Models.Session", null)
+                        .WithMany()
+                        .HasForeignKey("SessionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Nexora.Core.Models.Session", b =>

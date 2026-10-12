@@ -80,7 +80,88 @@ public class ServiceTests
             Assert.Equal(0, (await service.GetDashboardAsync(DateTime.Now, TimeZoneInfo.Local)).ActiveSessions);
             Assert.Equal(finished.Amount, (await service.GetDashboardAsync(DateTime.Now, TimeZoneInfo.Local)).TodayRevenue);
             Assert.Single(await service.GetRecentSessionsAsync());
+            await using (var verification = new NexoraDbContext(new DbContextOptionsBuilder<NexoraDbContext>().UseSqlite(connection).Options))
+                Assert.Equal(1, await verification.Charges.CountAsync(x => x.SessionId == session.Id));
             await Assert.ThrowsAsync<InvalidOperationException>(() => service.FinishSessionAsync(session.Id));
+        }
+    }
+
+    [Fact]
+    public async Task Concurrent_finish_operations_create_one_charge()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"nexora-charge-concurrency-{Guid.NewGuid():N}.db");
+        try
+        {
+            var first = CreateFileService(path);
+            var second = CreateFileService(path);
+            using (first.Provider)
+            using (second.Provider)
+            {
+                await first.Service.InitializeAsync();
+                var computer = await first.Service.AddComputerAsync("CHARGE-CONCURRENT");
+                var tariff = await first.Service.AddTariffAsync("Hora", 60m);
+                var session = await first.Service.StartSessionAsync(computer.Id, tariff.Id);
+
+                var attempts = await Task.WhenAll(
+                    CaptureFinishAsync(first.Service, session.Id),
+                    CaptureFinishAsync(second.Service, session.Id));
+
+                Assert.Single(attempts, x => x.Success);
+                Assert.Single(attempts, x => !x.Success);
+                await using var verification = new NexoraDbContext(new DbContextOptionsBuilder<NexoraDbContext>().UseSqlite($"Data Source={path};Pooling=False").Options);
+                Assert.Equal(1, await verification.Charges.CountAsync(x => x.SessionId == session.Id));
+            }
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+            if (File.Exists($"{path}-shm")) File.Delete($"{path}-shm");
+            if (File.Exists($"{path}-wal")) File.Delete($"{path}-wal");
+        }
+    }
+
+    private static async Task<(bool Success, Exception? Error)> CaptureFinishAsync(INexoraService service, Guid sessionId)
+    {
+        try
+        {
+            await service.FinishSessionAsync(sessionId);
+            return (true, null);
+        }
+        catch (Exception error)
+        {
+            return (false, error);
+        }
+    }
+
+    [Fact]
+    public async Task Registered_revenue_survives_service_restart()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"nexora-revenue-restart-{Guid.NewGuid():N}.db");
+        try
+        {
+            decimal chargedAmount;
+            using (var first = CreateFileService(path).Provider)
+            {
+                var service = first.GetRequiredService<INexoraService>();
+                await service.InitializeAsync();
+                var computer = await service.AddComputerAsync("REVENUE-RESTART");
+                var tariff = await service.AddTariffAsync("Hora", 60m);
+                chargedAmount = (await service.FinishSessionAsync((await service.StartSessionAsync(computer.Id, tariff.Id)).Id)).Amount;
+            }
+
+            using (var second = CreateFileService(path).Provider)
+            {
+                var service = second.GetRequiredService<INexoraService>();
+                await service.InitializeAsync();
+                var dashboard = await service.GetDashboardAsync(DateTime.Now, TimeZoneInfo.Local);
+                Assert.Equal(chargedAmount, dashboard.TodayRevenue);
+            }
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+            if (File.Exists($"{path}-shm")) File.Delete($"{path}-shm");
+            if (File.Exists($"{path}-wal")) File.Delete($"{path}-wal");
         }
     }
 
@@ -193,8 +274,14 @@ public class ServiceTests
             await using (var legacy = new NexoraDbContext(options))
             {
                 await legacy.Database.EnsureCreatedAsync();
-                legacy.Computers.Add(new Computer("LEGACY"));
+                await legacy.Database.ExecuteSqlRawAsync("DROP TABLE Charges");
+                var computer = new Computer("LEGACY");
+                legacy.Computers.Add(computer);
                 await legacy.SaveChangesAsync();
+                var sessionId = Guid.NewGuid();
+                var started = DateTime.UtcNow.AddMinutes(-2);
+                var ended = DateTime.UtcNow.AddMinutes(-1);
+                await legacy.Database.ExecuteSqlInterpolatedAsync($"INSERT INTO Sessions (Id, ComputerId, StartedAt, EndedAt, TariffName, HourlyRate, FinalAmount) VALUES ({sessionId}, {computer.Id}, {started}, {ended}, {"Legacy"}, {60m}, {1m})");
             }
 
             var current = CreateFileService(path);
@@ -202,6 +289,7 @@ public class ServiceTests
             {
                 await current.Service.InitializeAsync();
                 Assert.Contains(await current.Service.GetComputersAsync(), x => x.Name == "LEGACY");
+                Assert.Equal(1m, await current.Service.GetRevenueAsync(DateTime.Today, DateTime.Today.AddDays(1), TimeZoneInfo.Local));
             }
         }
         finally

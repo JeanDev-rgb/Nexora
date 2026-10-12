@@ -20,6 +20,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private int totalComputers;
     [ObservableProperty] private int activeSessions;
     [ObservableProperty] private decimal todayRevenue;
+    [ObservableProperty] private decimal activeEstimatedAmount;
     [ObservableProperty] private bool isBusy;
 
     public ObservableCollection<ComputerCardViewModel> Computers { get; } = [];
@@ -55,6 +56,7 @@ public partial class MainViewModel : ObservableObject
             TotalComputers = dashboard.TotalComputers;
             ActiveSessions = dashboard.ActiveSessions;
             TodayRevenue = dashboard.TodayRevenue;
+            ActiveEstimatedAmount = dashboard.ActiveEstimatedAmount;
             Message = "Datos actualizados.";
         }
         catch (Exception ex)
