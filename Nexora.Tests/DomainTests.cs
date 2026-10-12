@@ -47,4 +47,12 @@ public class DomainTests
         var session = new Session(Guid.NewGuid(), new Tariff("Basic", 10), start);
         Assert.Throws<ArgumentException>(() => session.Finish(start.AddSeconds(-1)));
     }
+
+    [Fact]
+    public void Active_amount_is_deterministic_from_duration_and_snapshot_rate()
+    {
+        Assert.Equal(0.50m, Session.CalculateAmount(TimeSpan.FromSeconds(1), 30m));
+        Assert.Equal(0.50m, Session.CalculateAmount(TimeSpan.FromMinutes(1), 30m));
+        Assert.Equal(1.5m, Session.CalculateAmount(TimeSpan.FromMinutes(2) + TimeSpan.FromSeconds(1), 30m));
+    }
 }

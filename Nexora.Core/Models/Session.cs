@@ -41,9 +41,18 @@ public class Session
     // Cobro por minuto iniciado, con importe monetario redondeado a 2 decimales.
     public decimal CalculateAmount(DateTime nowUtc)
     {
-        var elapsed = GetElapsed(nowUtc);
-        var billableMinutes = (long)Math.Ceiling(elapsed.TotalMinutes);
-        return Math.Round(billableMinutes * HourlyRate / 60m, 2, MidpointRounding.AwayFromZero);
+        return CalculateAmount(GetElapsed(nowUtc), HourlyRate);
+    }
+
+    public static decimal CalculateAmount(TimeSpan duration, decimal hourlyRate)
+    {
+        if (duration < TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(duration));
+        if (hourlyRate <= 0)
+            throw new ArgumentOutOfRangeException(nameof(hourlyRate));
+
+        var billableMinutes = (long)Math.Ceiling(duration.TotalMinutes);
+        return Math.Round(billableMinutes * hourlyRate / 60m, 2, MidpointRounding.AwayFromZero);
     }
 
     public void Finish(DateTime endedAtUtc)

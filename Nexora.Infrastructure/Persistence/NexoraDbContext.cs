@@ -35,6 +35,7 @@ public sealed class NexoraDbContext(DbContextOptions<NexoraDbContext> options) :
             entity.Property(x => x.FinalAmount).HasPrecision(18, 2);
             entity.HasIndex(x => new { x.ComputerId, x.EndedAt })
                 .HasDatabaseName("IX_Sessions_Computer_Active")
+                .IsUnique()
                 .HasFilter("EndedAt IS NULL");
             entity.HasOne<Computer>().WithMany().HasForeignKey(x => x.ComputerId).OnDelete(DeleteBehavior.Restrict);
         });

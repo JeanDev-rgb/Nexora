@@ -33,7 +33,7 @@ public sealed class NexoraService(IDbContextFactory<NexoraDbContext> contextFact
         if (hasHistory)
             return;
 
-        var initialMigration = db.Database.GetMigrations().Single();
+        var initialMigration = db.Database.GetMigrations().First();
         await using var baselineCommand = connection.CreateCommand();
         baselineCommand.CommandText = "CREATE TABLE IF NOT EXISTS \"__EFMigrationsHistory\" (\"MigrationId\" TEXT NOT NULL CONSTRAINT \"PK___EFMigrationsHistory\" PRIMARY KEY, \"ProductVersion\" TEXT NOT NULL); INSERT INTO \"__EFMigrationsHistory\" (\"MigrationId\", \"ProductVersion\") VALUES ($migration, $version);";
         var migrationParameter = baselineCommand.CreateParameter();

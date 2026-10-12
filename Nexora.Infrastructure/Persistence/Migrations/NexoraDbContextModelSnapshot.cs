@@ -72,6 +72,7 @@ namespace Nexora.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("ComputerId", "EndedAt")
+                        .IsUnique()
                         .HasDatabaseName("IX_Sessions_Computer_Active")
                         .HasFilter("EndedAt IS NULL");
 

@@ -197,8 +197,16 @@ public partial class ComputerCardViewModel : ObservableObject
     public Guid? ActiveSessionId => _activeSession?.Id;
     public string SessionText => _activeSession is null
         ? "Sin sesión activa"
-        : $"{(DateTime.UtcNow - _activeSession.StartedAtUtc):hh\\:mm\\:ss} · {_activeSession.Amount:C2}";
+        : $"{CurrentDuration:hh\\:mm\\:ss} · {CurrentAmount:C2}";
     public IReadOnlyList<Tariff> Tariffs { get; }
+
+    private TimeSpan CurrentDuration => _activeSession is null
+        ? TimeSpan.Zero
+        : DateTime.UtcNow - _activeSession.StartedAtUtc;
+
+    private decimal CurrentAmount => _activeSession is null
+        ? 0m
+        : Session.CalculateAmount(CurrentDuration, _activeSession.HourlyRate);
 
     public void Refresh() => OnPropertyChanged(nameof(SessionText));
 }
