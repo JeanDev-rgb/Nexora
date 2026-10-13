@@ -10,6 +10,7 @@ public interface INexoraService
     Task<IReadOnlyList<Tariff>> GetTariffsAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<SessionSummary>> GetRecentSessionsAsync(int count = 100, CancellationToken cancellationToken = default);
     Task<SessionSummary?> GetActiveSessionAsync(Guid computerId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyDictionary<Guid, SessionSummary>> GetActiveSessionsAsync(CancellationToken cancellationToken = default);
     Task<Computer> AddComputerAsync(string name, CancellationToken cancellationToken = default);
     Task RenameComputerAsync(Guid id, string name, CancellationToken cancellationToken = default);
     Task SetComputerOutOfServiceAsync(Guid id, CancellationToken cancellationToken = default);
@@ -25,4 +26,11 @@ public interface INexoraService
     Task<DashboardSummary> GetDashboardAsync(DateTime localDate, TimeZoneInfo timeZone, CancellationToken cancellationToken = default);
 }
 
-public sealed record DashboardSummary(int TotalComputers, int ActiveSessions, decimal TodayRevenue, decimal ActiveEstimatedAmount);
+public sealed record DashboardSummary(
+    int TotalComputers,
+    int AvailableComputers,
+    int ActiveSessions,
+    int OutOfServiceComputers,
+    int PendingPayments,
+    decimal TodayRevenue,
+    decimal ActiveEstimatedAmount);

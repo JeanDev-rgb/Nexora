@@ -80,6 +80,31 @@ public sealed class NexoraService(IDbContextFactory<NexoraDbContext> contextFact
         return ToSummary(session, computer.Name, charge);
     }
 
+    public async Task<IReadOnlyDictionary<Guid, SessionSummary>> GetActiveSessionsAsync(CancellationToken cancellationToken = default)
+    {
+        await using var db = await CreateContextAsync(cancellationToken);
+        var sessions = await db.Sessions
+            .Where(x => x.EndedAt == null)
+            .Join(db.Computers, session => session.ComputerId, computer => computer.Id,
+                (session, computer) => new { Session = session, ComputerName = computer.Name })
+            .ToListAsync(cancellationToken);
+
+        var expired = sessions.Where(x => x.Session.IsDueToExpire(DateTime.UtcNow)).ToList();
+        foreach (var row in expired)
+            row.Session.MarkTimeExpired(DateTime.UtcNow);
+        if (expired.Count > 0)
+            await db.SaveChangesAsync(cancellationToken);
+
+        var sessionIds = sessions.Select(x => x.Session.Id).ToList();
+        var charges = await db.Charges.AsNoTracking()
+            .Where(x => sessionIds.Contains(x.SessionId))
+            .ToDictionaryAsync(x => x.SessionId, cancellationToken);
+
+        return sessions.ToDictionary(
+            x => x.Session.ComputerId,
+            x => ToSummary(x.Session, x.ComputerName, charges.GetValueOrDefault(x.Session.Id)));
+    }
+
     public async Task<Computer> AddComputerAsync(string name, CancellationToken cancellationToken = default)
     {
         await using var db = await CreateContextAsync(cancellationToken);
@@ -220,11 +245,18 @@ public sealed class NexoraService(IDbContextFactory<NexoraDbContext> contextFact
     {
         var startLocal = localDate.Date;
         await using var db = await CreateContextAsync(cancellationToken);
-        var total = await db.Computers.CountAsync(cancellationToken);
+        var computerCounts = await db.Computers.AsNoTracking()
+            .GroupBy(x => x.Status)
+            .Select(x => new { Status = x.Key, Count = x.Count() })
+            .ToListAsync(cancellationToken);
+        var total = computerCounts.Sum(x => x.Count);
+        var available = computerCounts.FirstOrDefault(x => x.Status == ComputerStatus.Available)?.Count ?? 0;
+        var outOfService = computerCounts.FirstOrDefault(x => x.Status == ComputerStatus.OutOfService)?.Count ?? 0;
         var activeRows = await db.Sessions.AsNoTracking().Where(x => x.EndedAt == null).Select(x => new { x.StartedAt, x.HourlyRate, x.Mode, x.ContractedDurationSeconds }).ToListAsync(cancellationToken);
         var activeEstimated = activeRows.Sum(x => x.Mode == SessionMode.Prepaid ? Session.CalculateAmount(TimeSpan.FromSeconds(x.ContractedDurationSeconds!.Value), x.HourlyRate) : Session.CalculateAmount(DateTime.UtcNow - x.StartedAt, x.HourlyRate));
+        var pendingPayments = await db.Sessions.CountAsync(x => x.EndedAt != null && x.PaymentStatus == PaymentStatus.Pending, cancellationToken);
         var revenue = await GetRevenueAsync(startLocal, startLocal.AddDays(1), timeZone, cancellationToken);
-        return new DashboardSummary(total, activeRows.Count, revenue, activeEstimated);
+        return new DashboardSummary(total, available, activeRows.Count, outOfService, pendingPayments, revenue, activeEstimated);
     }
 
     private static SessionSummary ToSummary(Session session, string computerName, Charge? charge)

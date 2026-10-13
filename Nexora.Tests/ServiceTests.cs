@@ -272,6 +272,33 @@ public class ServiceTests
     }
 
     [Fact]
+    public async Task Dashboard_exposes_operational_counts_and_pending_debt()
+    {
+        var (service, connection, provider) = CreateService();
+        using (provider)
+        await using (connection)
+        {
+            await service.InitializeAsync();
+            var available = await service.AddComputerAsync("AVAILABLE");
+            var busy = await service.AddComputerAsync("BUSY");
+            var offline = await service.AddComputerAsync("OFFLINE");
+            await service.SetComputerOutOfServiceAsync(offline.Id);
+            var tariff = await service.AddTariffAsync("Dashboard", 60m);
+            await service.StartSessionAsync(busy.Id, tariff.Id);
+            var finished = await service.FinishSessionAsync((await service.GetActiveSessionAsync(busy.Id))!.Id);
+
+            var dashboard = await service.GetDashboardAsync(DateTime.Now, TimeZoneInfo.Local);
+
+            Assert.Equal(3, dashboard.TotalComputers);
+            Assert.Equal(2, dashboard.AvailableComputers);
+            Assert.Equal(1, dashboard.OutOfServiceComputers);
+            Assert.Equal(1, dashboard.PendingPayments);
+            Assert.Equal(0m, dashboard.TodayRevenue);
+            Assert.True(finished.IsPending);
+        }
+    }
+
+    [Fact]
     public async Task Prepaid_session_uses_fixed_amount_and_can_be_paid_at_start()
     {
         var (service, connection, provider) = CreateService();
