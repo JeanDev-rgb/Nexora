@@ -64,6 +64,24 @@ public sealed class NexoraService(IDbContextFactory<NexoraDbContext> contextFact
         return rows.Select(x => ToSummary(x.session, x.Name, x.Charge)).ToList();
     }
 
+    public async Task<IReadOnlyList<SessionSummary>> GetCashEntriesAsync(CancellationToken cancellationToken = default)
+    {
+        await using var db = await CreateContextAsync(cancellationToken);
+        var rows = await db.Sessions.AsNoTracking()
+            .Where(x => x.EndedAt != null || x.Mode == SessionMode.Prepaid)
+            .Join(db.Computers, session => session.ComputerId, computer => computer.Id,
+                (session, computer) => new { Session = session, ComputerName = computer.Name })
+            .OrderByDescending(x => x.Session.EndedAt ?? x.Session.StartedAt)
+            .ToListAsync(cancellationToken);
+        var sessionIds = rows.Select(x => x.Session.Id).ToList();
+        var charges = await db.Charges.AsNoTracking()
+            .Where(x => sessionIds.Contains(x.SessionId))
+            .ToDictionaryAsync(x => x.SessionId, cancellationToken);
+        return rows.Select(x => ToSummary(x.Session, x.ComputerName, charges.GetValueOrDefault(x.Session.Id)))
+            .OrderByDescending(x => x.ChargedAtUtc ?? x.EndedAtUtc ?? x.StartedAtUtc)
+            .ToList();
+    }
+
     public async Task<SessionSummary?> GetActiveSessionAsync(Guid computerId, CancellationToken cancellationToken = default)
     {
         await using var db = await CreateContextAsync(cancellationToken);
@@ -252,11 +270,24 @@ public sealed class NexoraService(IDbContextFactory<NexoraDbContext> contextFact
         var total = computerCounts.Sum(x => x.Count);
         var available = computerCounts.FirstOrDefault(x => x.Status == ComputerStatus.Available)?.Count ?? 0;
         var outOfService = computerCounts.FirstOrDefault(x => x.Status == ComputerStatus.OutOfService)?.Count ?? 0;
-        var activeRows = await db.Sessions.AsNoTracking().Where(x => x.EndedAt == null).Select(x => new { x.StartedAt, x.HourlyRate, x.Mode, x.ContractedDurationSeconds }).ToListAsync(cancellationToken);
-        var activeEstimated = activeRows.Sum(x => x.Mode == SessionMode.Prepaid ? Session.CalculateAmount(TimeSpan.FromSeconds(x.ContractedDurationSeconds!.Value), x.HourlyRate) : Session.CalculateAmount(DateTime.UtcNow - x.StartedAt, x.HourlyRate));
-        var pendingPayments = await db.Sessions.CountAsync(x => x.EndedAt != null && x.PaymentStatus == PaymentStatus.Pending, cancellationToken);
+        var activeRows = await db.Sessions.AsNoTracking()
+            .Where(x => x.EndedAt == null)
+            .Select(x => new { x.StartedAt, x.HourlyRate, x.Mode }).ToListAsync(cancellationToken);
+        var activeEstimated = activeRows
+            .Where(x => x.Mode == SessionMode.OpenEnded)
+            .Sum(x => Session.CalculateAmount(DateTime.UtcNow - x.StartedAt, x.HourlyRate));
+        var pendingRows = await db.Sessions.AsNoTracking()
+            .Where(x => x.PaymentStatus == PaymentStatus.Pending && (x.EndedAt != null || x.Mode == SessionMode.Prepaid))
+            .Select(x => new { x.FinalAmount, x.Mode, x.HourlyRate, x.ContractedDurationSeconds })
+            .ToListAsync(cancellationToken);
+        var pendingAmount = pendingRows.Sum(x => x.FinalAmount ?? (x.Mode == SessionMode.Prepaid && x.ContractedDurationSeconds.HasValue
+            ? Session.CalculateAmount(TimeSpan.FromSeconds(x.ContractedDurationSeconds.Value), x.HourlyRate)
+            : 0m));
         var revenue = await GetRevenueAsync(startLocal, startLocal.AddDays(1), timeZone, cancellationToken);
-        return new DashboardSummary(total, available, activeRows.Count, outOfService, pendingPayments, revenue, activeEstimated);
+        return new DashboardSummary(total, available, activeRows.Count, outOfService, pendingRows.Count, revenue, activeEstimated)
+        {
+            PendingAmount = pendingAmount
+        };
     }
 
     private static SessionSummary ToSummary(Session session, string computerName, Charge? charge)
@@ -267,7 +298,12 @@ public sealed class NexoraService(IDbContextFactory<NexoraDbContext> contextFact
         if (session.Mode == SessionMode.Prepaid) duration = TimeSpan.FromSeconds(Math.Min(duration.TotalSeconds, session.ContractedDurationSeconds!.Value));
         var isEstimated = session.IsActive && session.Mode == SessionMode.OpenEnded;
         var amount = isEstimated ? session.CalculateAmount(nowUtc) : charge?.Amount ?? session.FinalAmount ?? 0m;
-        return new SessionSummary(session.Id, session.ComputerId, computerName, session.TariffName, session.StartedAt, end, session.HourlyRate, amount, duration, session.Mode, session.State, session.PaymentStatus, isEstimated, charge?.ChargedAtUtc)
+        return new SessionSummary(session.Id, session.ComputerId, computerName, session.TariffName,
+            DateTime.SpecifyKind(session.StartedAt, DateTimeKind.Utc),
+            end.HasValue ? DateTime.SpecifyKind(end.Value, DateTimeKind.Utc) : null,
+            session.HourlyRate, amount, duration, session.Mode, session.State, session.PaymentStatus,
+            isEstimated,
+            charge is null ? null : DateTime.SpecifyKind(charge.ChargedAtUtc, DateTimeKind.Utc))
         {
             ContractedDuration = session.ContractedDurationSeconds is { } seconds
                 ? TimeSpan.FromSeconds(seconds)

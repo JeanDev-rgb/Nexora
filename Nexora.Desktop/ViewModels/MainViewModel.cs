@@ -31,6 +31,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private int availableComputers;
     [ObservableProperty] private int outOfServiceComputers;
     [ObservableProperty] private int pendingPayments;
+    [ObservableProperty] private decimal pendingAmount;
     [ObservableProperty] private string historyComputerFilter = "Todos";
     [ObservableProperty] private string historyPaymentFilter = "Todos";
     [ObservableProperty] private string historyModeFilter = "Todos";
@@ -43,6 +44,7 @@ public partial class MainViewModel : ObservableObject
     public ObservableCollection<Tariff> Tariffs { get; } = [];
     public ObservableCollection<SessionSummary> History { get; } = [];
     public ObservableCollection<SessionSummary> VisibleHistory { get; } = [];
+    public CashViewModel Cash { get; }
     public ObservableCollection<string> HistoryComputerOptions { get; } = ["Todos"];
     public IReadOnlyList<string> HistoryPaymentOptions { get; } = ["Todos", "Pendiente", "Pagada"];
     public IReadOnlyList<string> HistoryModeOptions { get; } = ["Todos", "Tiempo libre", "Tiempo contratado"];
@@ -54,6 +56,7 @@ public partial class MainViewModel : ObservableObject
     {
         _service = service;
         _themeService = themeService;
+        Cash = new CashViewModel(service, RegisterCashPaymentAsync);
         SelectedTheme = themeService.CurrentTheme;
     }
 
@@ -75,6 +78,7 @@ public partial class MainViewModel : ObservableObject
             var activeSessions = await _service.GetActiveSessionsAsync();
             var history = await _service.GetRecentSessionsAsync();
             var dashboard = await _service.GetDashboardAsync(DateTime.Now, _timeZone);
+            await Cash.LoadAsync();
 
             Computers.Clear();
             foreach (var computer in computers)
@@ -99,6 +103,7 @@ public partial class MainViewModel : ObservableObject
             AvailableComputers = dashboard.AvailableComputers;
             OutOfServiceComputers = dashboard.OutOfServiceComputers;
             PendingPayments = dashboard.PendingPayments;
+            PendingAmount = dashboard.PendingAmount;
             TodayRevenue = dashboard.TodayRevenue;
             ActiveEstimatedAmount = dashboard.ActiveEstimatedAmount;
             Message = "Datos actualizados.";
@@ -111,6 +116,12 @@ public partial class MainViewModel : ObservableObject
         {
             IsBusy = false;
         }
+    }
+
+    private async Task RegisterCashPaymentAsync(Guid sessionId)
+    {
+        await _service.RegisterPaymentAsync(sessionId);
+        await LoadAsync();
     }
 
     partial void OnCurrentSectionChanged(string value)
