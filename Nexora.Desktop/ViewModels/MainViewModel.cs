@@ -390,7 +390,7 @@ public partial class ComputerCardViewModel : ObservableObject
         : Session.CalculateAmount(CurrentDuration, _activeSession.HourlyRate);
     private TimeSpan RemainingDuration => _activeSession is null || _activeSession.Mode != SessionMode.Prepaid
         ? TimeSpan.Zero
-        : TimeSpan.FromSeconds(Math.Max(0, _activeSession.Duration.TotalSeconds - CurrentDuration.TotalSeconds));
+        : TimeSpan.FromSeconds(Math.Max(0, (_activeSession.ContractedDuration ?? _activeSession.Duration).TotalSeconds - CurrentDuration.TotalSeconds));
 
     public void Refresh() => OnPropertyChanged(nameof(SessionText));
 }

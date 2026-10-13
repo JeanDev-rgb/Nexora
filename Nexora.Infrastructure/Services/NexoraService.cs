@@ -267,6 +267,11 @@ public sealed class NexoraService(IDbContextFactory<NexoraDbContext> contextFact
         if (session.Mode == SessionMode.Prepaid) duration = TimeSpan.FromSeconds(Math.Min(duration.TotalSeconds, session.ContractedDurationSeconds!.Value));
         var isEstimated = session.IsActive && session.Mode == SessionMode.OpenEnded;
         var amount = isEstimated ? session.CalculateAmount(nowUtc) : charge?.Amount ?? session.FinalAmount ?? 0m;
-        return new SessionSummary(session.Id, session.ComputerId, computerName, session.TariffName, session.StartedAt, end, session.HourlyRate, amount, duration, session.Mode, session.State, session.PaymentStatus, isEstimated, charge?.ChargedAtUtc);
+        return new SessionSummary(session.Id, session.ComputerId, computerName, session.TariffName, session.StartedAt, end, session.HourlyRate, amount, duration, session.Mode, session.State, session.PaymentStatus, isEstimated, charge?.ChargedAtUtc)
+        {
+            ContractedDuration = session.ContractedDurationSeconds is { } seconds
+                ? TimeSpan.FromSeconds(seconds)
+                : null
+        };
     }
 }

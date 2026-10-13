@@ -1,0 +1,9 @@
+<UserControl x:Class="Nexora.Desktop.Views.SettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <StackPanel>
+        <TextBlock Text="Configuración operativa" FontSize="18" FontWeight="SemiBold"/>
+        <Border Style="{StaticResource Card}" Margin="0,16,0,12"><StackPanel><TextBlock Text="Nueva tarifa" FontSize="16" FontWeight="SemiBold"/><StackPanel Orientation="Horizontal" Margin="0,14,0,0"><TextBox Width="220" Text="{Binding NewTariffName}" ToolTip="Nombre"/><TextBox Width="130" Text="{Binding NewTariffPrice}" ToolTip="Precio por hora"/><Button Content="Guardar tarifa" Command="{Binding AddTariffCommand}"/></StackPanel></StackPanel></Border>
+        <DataGrid ItemsSource="{Binding Tariffs}" IsReadOnly="True"><DataGrid.Columns><DataGridTextColumn Header="Nombre" Binding="{Binding Name}" Width="*"/><DataGridTextColumn Header="Precio / hora" Binding="{Binding PricePerHour, StringFormat={}{0:C2}}" Width="160"/><DataGridCheckBoxColumn Header="Activa" Binding="{Binding IsActive}" Width="100"/></DataGrid.Columns></DataGrid>
+    </StackPanel>
+</UserControl>

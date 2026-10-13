@@ -1,0 +1,9 @@
+<UserControl x:Class="Nexora.Desktop.Views.HistoryView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <StackPanel>
+        <TextBlock Text="Sesiones finalizadas" Foreground="{DynamicResource MutedTextBrush}" Margin="0,0,0,14"/>
+        <StackPanel Orientation="Horizontal" Margin="0,0,0,14"><ComboBox Width="150" ItemsSource="{Binding HistoryComputerOptions}" SelectedItem="{Binding HistoryComputerFilter}"/><ComboBox Width="150" ItemsSource="{Binding HistoryModeOptions}" SelectedItem="{Binding HistoryModeFilter}"/><ComboBox Width="150" ItemsSource="{Binding HistoryStateOptions}" SelectedItem="{Binding HistoryStateFilter}"/><DatePicker Width="135" SelectedDate="{Binding HistoryFromDate}"/><DatePicker Width="135" SelectedDate="{Binding HistoryToDate}"/></StackPanel>
+        <DataGrid ItemsSource="{Binding VisibleHistory}" IsReadOnly="True"><DataGrid.Columns><DataGridTextColumn Header="Equipo" Binding="{Binding ComputerName}" Width="*"/><DataGridTextColumn Header="Modo" Binding="{Binding Mode}" Width="140"/><DataGridTextColumn Header="Inicio" Binding="{Binding StartedAtUtc, StringFormat={}{0:g}}" Width="150"/><DataGridTextColumn Header="Duración" Binding="{Binding Duration}" Width="130"/><DataGridTextColumn Header="Importe" Binding="{Binding Amount, StringFormat={}{0:C2}}" Width="120"/><DataGridTextColumn Header="Pago" Binding="{Binding PaymentStatus}" Width="120"/></DataGrid.Columns></DataGrid>
+    </StackPanel>
+</UserControl>

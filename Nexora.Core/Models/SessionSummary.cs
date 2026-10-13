@@ -19,4 +19,5 @@ public sealed record SessionSummary(
     DateTime? ChargedAtUtc)
 {
     public bool IsPending => PaymentStatus == PaymentStatus.Pending;
+    public TimeSpan? ContractedDuration { get; init; }
 }
