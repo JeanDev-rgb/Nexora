@@ -12,14 +12,14 @@ public partial class CashViewModel : ObservableObject
     private readonly INexoraService _service;
     private readonly Func<Guid, Task> _registerPayment;
 
-    [ObservableProperty] private string computerFilter = "Todos";
-    [ObservableProperty] private string paymentFilter = "Todos";
-    [ObservableProperty] private DateTime? fromDate;
-    [ObservableProperty] private DateTime? toDate;
-    [ObservableProperty] private bool isBusy;
-    [ObservableProperty] private string message = string.Empty;
-    [ObservableProperty] private decimal confirmedTotal;
-    [ObservableProperty] private decimal pendingTotal;
+    [ObservableProperty] private string _computerFilter = "Todos";
+    [ObservableProperty] private string _paymentFilter = "Todos";
+    [ObservableProperty] private DateTime? _fromDate;
+    [ObservableProperty] private DateTime? _toDate;
+    [ObservableProperty] private bool _isBusy;
+    [ObservableProperty] private string _message = string.Empty;
+    [ObservableProperty] private decimal _confirmedTotal;
+    [ObservableProperty] private decimal _pendingTotal;
 
     public ObservableCollection<SessionSummary> Entries { get; } = [];
     public ObservableCollection<CashEntryViewModel> VisibleEntries { get; } = [];
