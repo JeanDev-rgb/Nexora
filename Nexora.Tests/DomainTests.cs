@@ -55,4 +55,33 @@ public class DomainTests
         Assert.Equal(0.50m, Session.CalculateAmount(TimeSpan.FromMinutes(1), 30m));
         Assert.Equal(1.5m, Session.CalculateAmount(TimeSpan.FromMinutes(2) + TimeSpan.FromSeconds(1), 30m));
     }
+
+    [Fact]
+    public void Prepaid_session_keeps_fixed_price_and_never_has_negative_remaining_time()
+    {
+        var start = new DateTime(2026, 10, 12, 10, 0, 0, DateTimeKind.Utc);
+        var session = new Session(Guid.NewGuid(), new Tariff("Paquete", 60m), start,
+            SessionMode.Prepaid, TimeSpan.FromMinutes(30));
+
+        Assert.Equal(30m, session.FinalAmount);
+        Assert.Equal(TimeSpan.FromMinutes(30), session.GetRemaining(start));
+        Assert.Equal(TimeSpan.Zero, session.GetRemaining(start.AddMinutes(31)));
+        Assert.Equal(30m, session.CalculateAmount(start.AddHours(2)));
+    }
+
+    [Fact]
+    public void Expired_prepaid_session_requires_explicit_release()
+    {
+        var start = new DateTime(2026, 10, 12, 10, 0, 0, DateTimeKind.Utc);
+        var session = new Session(Guid.NewGuid(), new Tariff("Paquete", 60m), start,
+            SessionMode.Prepaid, TimeSpan.FromMinutes(15));
+
+        session.MarkTimeExpired(start.AddMinutes(15));
+
+        Assert.Equal(SessionState.TimeExpired, session.State);
+        Assert.Null(session.EndedAt);
+        Assert.Throws<InvalidOperationException>(() => session.MarkTimeExpired(start.AddMinutes(16)));
+        session.ReleaseAfterExpiration();
+        Assert.Equal(start.AddMinutes(15), session.EndedAt);
+    }
 }

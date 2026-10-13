@@ -1,3 +1,5 @@
+using Nexora.Core.Enums;
+
 namespace Nexora.Core.Models;
 
 public sealed record SessionSummary(
@@ -10,5 +12,11 @@ public sealed record SessionSummary(
     decimal HourlyRate,
     decimal Amount,
     TimeSpan Duration,
+    SessionMode Mode,
+    SessionState State,
+    PaymentStatus PaymentStatus,
     bool IsEstimated,
-    DateTime? ChargedAtUtc);
+    DateTime? ChargedAtUtc)
+{
+    public bool IsPending => PaymentStatus == PaymentStatus.Pending;
+}

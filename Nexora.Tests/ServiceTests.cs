@@ -1,6 +1,7 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Nexora.Core.Enums;
 using Nexora.Core.Interfaces;
 using Nexora.Core.Models;
 using Nexora.Infrastructure.Persistence;
@@ -78,11 +79,15 @@ public class ServiceTests
             var finished = await service.FinishSessionAsync(session.Id);
             Assert.NotNull(finished.EndedAtUtc);
             Assert.Equal(0, (await service.GetDashboardAsync(DateTime.Now, TimeZoneInfo.Local)).ActiveSessions);
-            Assert.Equal(finished.Amount, (await service.GetDashboardAsync(DateTime.Now, TimeZoneInfo.Local)).TodayRevenue);
+            Assert.Equal(0m, (await service.GetDashboardAsync(DateTime.Now, TimeZoneInfo.Local)).TodayRevenue);
             Assert.Single(await service.GetRecentSessionsAsync());
             await using (var verification = new NexoraDbContext(new DbContextOptionsBuilder<NexoraDbContext>().UseSqlite(connection).Options))
+                Assert.Equal(0, await verification.Charges.CountAsync(x => x.SessionId == session.Id));
+            await service.RegisterPaymentAsync(session.Id);
+            Assert.Equal(finished.Amount, (await service.GetDashboardAsync(DateTime.Now, TimeZoneInfo.Local)).TodayRevenue);
+            await Assert.ThrowsAsync<InvalidOperationException>(() => service.RegisterPaymentAsync(session.Id));
+            await using (var verification = new NexoraDbContext(new DbContextOptionsBuilder<NexoraDbContext>().UseSqlite(connection).Options))
                 Assert.Equal(1, await verification.Charges.CountAsync(x => x.SessionId == session.Id));
-            await Assert.ThrowsAsync<InvalidOperationException>(() => service.FinishSessionAsync(session.Id));
         }
     }
 
@@ -108,6 +113,7 @@ public class ServiceTests
 
                 Assert.Single(attempts, x => x.Success);
                 Assert.Single(attempts, x => !x.Success);
+                await first.Service.RegisterPaymentAsync(session.Id);
                 await using var verification = new NexoraDbContext(new DbContextOptionsBuilder<NexoraDbContext>().UseSqlite($"Data Source={path};Pooling=False").Options);
                 Assert.Equal(1, await verification.Charges.CountAsync(x => x.SessionId == session.Id));
             }
@@ -153,6 +159,7 @@ public class ServiceTests
             {
                 var service = second.GetRequiredService<INexoraService>();
                 await service.InitializeAsync();
+                await service.RegisterPaymentAsync((await service.GetRecentSessionsAsync()).Single().Id);
                 var dashboard = await service.GetDashboardAsync(DateTime.Now, TimeZoneInfo.Local);
                 Assert.Equal(chargedAmount, dashboard.TodayRevenue);
             }
@@ -265,6 +272,48 @@ public class ServiceTests
     }
 
     [Fact]
+    public async Task Prepaid_session_uses_fixed_amount_and_can_be_paid_at_start()
+    {
+        var (service, connection, provider) = CreateService();
+        using (provider)
+        await using (connection)
+        {
+            await service.InitializeAsync();
+            var computer = await service.AddComputerAsync("PREPAID");
+            var tariff = await service.AddTariffAsync("Paquete", 60m);
+            var session = await service.StartSessionAsync(computer.Id, tariff.Id, SessionMode.Prepaid, TimeSpan.FromMinutes(30), true);
+
+            Assert.Equal(SessionMode.Prepaid, session.Mode);
+            Assert.Equal(30m, session.Amount);
+            Assert.False(session.IsEstimated);
+            Assert.Equal(PaymentStatus.Paid, session.PaymentStatus);
+            Assert.Equal(30m, (await service.GetDashboardAsync(DateTime.Now, TimeZoneInfo.Local)).TodayRevenue);
+        }
+    }
+
+    [Fact]
+    public async Task Expired_prepaid_session_stays_in_use_until_admin_releases_it()
+    {
+        var (service, connection, provider) = CreateService();
+        using (provider)
+        await using (connection)
+        {
+            await service.InitializeAsync();
+            var computer = await service.AddComputerAsync("EXPIRED-PACKAGE");
+            var tariff = await service.AddTariffAsync("Paquete", 60m);
+            var session = await service.StartSessionAsync(computer.Id, tariff.Id, SessionMode.Prepaid, TimeSpan.FromSeconds(1));
+            await Task.Delay(1200);
+
+            var expired = await service.GetActiveSessionAsync(computer.Id);
+            Assert.NotNull(expired);
+            Assert.Equal(SessionState.TimeExpired, expired.State);
+            Assert.Equal(TimeSpan.FromSeconds(1), expired.Duration);
+            await service.FinishSessionAsync(session.Id);
+            Assert.Null(await service.GetActiveSessionAsync(computer.Id));
+        }
+    }
+
+    [Fact]
     public async Task Migration_preserves_data_from_an_EnsureCreated_database()
     {
         var path = Path.Combine(Path.GetTempPath(), $"nexora-upgrade-{Guid.NewGuid():N}.db");
@@ -273,8 +322,7 @@ public class ServiceTests
             var options = new DbContextOptionsBuilder<NexoraDbContext>().UseSqlite($"Data Source={path};Pooling=False").Options;
             await using (var legacy = new NexoraDbContext(options))
             {
-                await legacy.Database.EnsureCreatedAsync();
-                await legacy.Database.ExecuteSqlRawAsync("DROP TABLE Charges");
+                await legacy.Database.MigrateAsync("20261012174009_EnforceOneActiveSessionPerComputer");
                 var computer = new Computer("LEGACY");
                 legacy.Computers.Add(computer);
                 await legacy.SaveChangesAsync();

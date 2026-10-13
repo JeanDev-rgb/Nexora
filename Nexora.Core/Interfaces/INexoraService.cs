@@ -1,3 +1,4 @@
+using Nexora.Core.Enums;
 using Nexora.Core.Models;
 
 namespace Nexora.Core.Interfaces;
@@ -16,7 +17,10 @@ public interface INexoraService
     Task<Tariff> AddTariffAsync(string name, decimal pricePerHour, bool isActive = true, CancellationToken cancellationToken = default);
     Task UpdateTariffAsync(Guid id, string name, decimal pricePerHour, bool isActive, CancellationToken cancellationToken = default);
     Task<SessionSummary> StartSessionAsync(Guid computerId, Guid tariffId, CancellationToken cancellationToken = default);
+    Task<SessionSummary> StartSessionAsync(Guid computerId, Guid tariffId, SessionMode mode, TimeSpan? contractedDuration, bool payAtStart = false, CancellationToken cancellationToken = default);
     Task<SessionSummary> FinishSessionAsync(Guid sessionId, CancellationToken cancellationToken = default);
+    Task<SessionSummary> MarkTimeExpiredAsync(Guid sessionId, CancellationToken cancellationToken = default);
+    Task<SessionSummary> RegisterPaymentAsync(Guid sessionId, CancellationToken cancellationToken = default);
     Task<decimal> GetRevenueAsync(DateTime localFrom, DateTime localTo, TimeZoneInfo timeZone, CancellationToken cancellationToken = default);
     Task<DashboardSummary> GetDashboardAsync(DateTime localDate, TimeZoneInfo timeZone, CancellationToken cancellationToken = default);
 }

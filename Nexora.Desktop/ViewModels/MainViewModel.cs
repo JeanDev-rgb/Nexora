@@ -113,7 +113,8 @@ public partial class MainViewModel : ObservableObject
         try
         {
             var tariffId = card.SelectedTariffId ?? throw new InvalidOperationException("Configura una tarifa activa antes de iniciar sesiones.");
-            await _service.StartSessionAsync(card.Id, tariffId);
+            var duration = card.SelectedMode == SessionMode.Prepaid ? TimeSpan.FromMinutes(card.SelectedDurationMinutes) : (TimeSpan?)null;
+            await _service.StartSessionAsync(card.Id, tariffId, card.SelectedMode, duration, card.PayAtStart);
             await LoadAsync();
         }
         catch (Exception ex)
@@ -160,6 +161,21 @@ public partial class MainViewModel : ObservableObject
     }
 
     [RelayCommand]
+    private async Task RegisterPaymentAsync(SessionSummary? session)
+    {
+        if (session is null) return;
+        try
+        {
+            await _service.RegisterPaymentAsync(session.Id);
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            Message = ex.Message;
+        }
+    }
+
+    [RelayCommand]
     private Task RefreshAsync() => LoadAsync();
 
     public void RefreshActiveDurations()
@@ -175,6 +191,12 @@ public partial class ComputerCardViewModel : ObservableObject
     private readonly SessionSummary? _activeSession;
 
     [ObservableProperty] private Guid? selectedTariffId;
+    [ObservableProperty] private SessionMode selectedMode = SessionMode.OpenEnded;
+    [ObservableProperty] private int selectedDurationMinutes = 60;
+    [ObservableProperty] private bool payAtStart;
+
+    public IReadOnlyList<SessionMode> SessionModes { get; } = Enum.GetValues<SessionMode>();
+    public IReadOnlyList<int> ContractDurations { get; } = [15, 30, 45, 60, 120];
 
     public ComputerCardViewModel(Computer computer, SessionSummary? activeSession, IReadOnlyList<Tariff> tariffs)
     {
@@ -197,10 +219,34 @@ public partial class ComputerCardViewModel : ObservableObject
     public bool IsAvailable => Status == ComputerStatus.Available;
     public bool IsOutOfService => Status == ComputerStatus.OutOfService;
     public Guid? ActiveSessionId => _activeSession?.Id;
+    public string SessionModeText => _activeSession?.Mode switch
+    {
+        SessionMode.Prepaid => "Tiempo contratado",
+        SessionMode.OpenEnded => "Tiempo libre",
+        _ => "Sin sesión"
+    };
+    public string PaymentText => _activeSession?.PaymentStatus == PaymentStatus.Paid ? "Pagada" : "Pendiente de cobro";
     public string SessionText => _activeSession is null
         ? "Sin sesión activa"
-        : $"{CurrentDuration:hh\\:mm\\:ss} · {CurrentAmount:C2}";
+        : _activeSession.State == SessionState.TimeExpired
+            ? $"Tiempo agotado · {_activeSession.Amount:C2}"
+        : _activeSession.Mode == SessionMode.Prepaid && RemainingDuration == TimeSpan.Zero
+                ? $"Tiempo agotado · {_activeSession.Amount:C2}"
+                : _activeSession.Mode == SessionMode.Prepaid
+                ? $"Restante: {RemainingDuration:hh\\:mm\\:ss} · {_activeSession.Amount:C2}"
+                : $"Transcurrido: {CurrentDuration:hh\\:mm\\:ss} · Estimado: {CurrentAmount:C2}";
     public IReadOnlyList<Tariff> Tariffs { get; }
+    public decimal ContractedAmount
+    {
+        get
+        {
+            var tariff = SelectedTariffId is { } id ? Tariffs.FirstOrDefault(x => x.Id == id) : null;
+            return tariff is null || SelectedDurationMinutes <= 0 ? 0m : Session.CalculateAmount(TimeSpan.FromMinutes(SelectedDurationMinutes), tariff.PricePerHour);
+        }
+    }
+
+    partial void OnSelectedTariffIdChanged(Guid? value) => OnPropertyChanged(nameof(ContractedAmount));
+    partial void OnSelectedDurationMinutesChanged(int value) => OnPropertyChanged(nameof(ContractedAmount));
 
     private TimeSpan CurrentDuration => _activeSession is null
         ? TimeSpan.Zero
@@ -209,6 +255,9 @@ public partial class ComputerCardViewModel : ObservableObject
     private decimal CurrentAmount => _activeSession is null
         ? 0m
         : Session.CalculateAmount(CurrentDuration, _activeSession.HourlyRate);
+    private TimeSpan RemainingDuration => _activeSession is null || _activeSession.Mode != SessionMode.Prepaid
+        ? TimeSpan.Zero
+        : TimeSpan.FromSeconds(Math.Max(0, _activeSession.Duration.TotalSeconds - CurrentDuration.TotalSeconds));
 
     public void Refresh() => OnPropertyChanged(nameof(SessionText));
 }

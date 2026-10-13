@@ -31,8 +31,13 @@ public sealed class NexoraDbContext(DbContextOptions<NexoraDbContext> options) :
         modelBuilder.Entity<Session>(entity =>
         {
             entity.HasKey(x => x.Id);
+            entity.Property(x => x.Mode).HasConversion<string>().IsRequired();
+            entity.Property(x => x.State).HasConversion<string>().IsRequired();
+            entity.Property(x => x.PaymentStatus).HasConversion<string>().IsRequired();
             entity.Property(x => x.TariffName).HasMaxLength(100).IsRequired();
             entity.Property(x => x.HourlyRate).HasPrecision(18, 2).IsRequired();
+            entity.Property(x => x.ContractedDurationSeconds);
+            entity.Property(x => x.PaidAtUtc);
             entity.Property(x => x.FinalAmount).HasPrecision(18, 2);
             entity.HasIndex(x => new { x.ComputerId, x.EndedAt })
                 .HasDatabaseName("IX_Sessions_Computer_Active")

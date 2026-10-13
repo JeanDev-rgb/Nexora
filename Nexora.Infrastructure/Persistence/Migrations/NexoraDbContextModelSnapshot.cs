@@ -76,6 +76,9 @@ namespace Nexora.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("ComputerId")
                         .HasColumnType("TEXT");
 
+                    b.Property<long?>("ContractedDurationSeconds")
+                        .HasColumnType("INTEGER");
+
                     b.Property<DateTime?>("EndedAt")
                         .HasColumnType("TEXT");
 
@@ -87,7 +90,22 @@ namespace Nexora.Infrastructure.Persistence.Migrations
                         .HasPrecision(18, 2)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("Mode")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("PaidAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PaymentStatus")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime>("StartedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("State")
+                        .IsRequired()
                         .HasColumnType("TEXT");
 
                     b.Property<string>("TariffName")
